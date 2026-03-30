@@ -3,13 +3,24 @@ import tempfile
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Security
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from docling.document_converter import DocumentConverter
 
 app = FastAPI(title="Docling API")
 converter = DocumentConverter()
+
+API_KEY = os.environ.get("API_KEY")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def verify_api_key(key: str | None = Security(api_key_header)):
+    if not API_KEY:
+        return  # API_KEY未設定なら認証スキップ
+    if key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 class UrlRequest(BaseModel):
@@ -39,7 +50,7 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/convert/url")
+@app.post("/convert/url", dependencies=[Depends(verify_api_key)])
 def convert_url(req: UrlRequest):
     try:
         result = converter.convert(req.url)
@@ -49,7 +60,7 @@ def convert_url(req: UrlRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/convert/base64")
+@app.post("/convert/base64", dependencies=[Depends(verify_api_key)])
 def convert_base64(req: Base64Request):
     try:
         file_bytes = base64.b64decode(req.data)
@@ -67,7 +78,7 @@ def convert_base64(req: Base64Request):
             raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/convert/file")
+@app.post("/convert/file", dependencies=[Depends(verify_api_key)])
 def convert_file(
     file: UploadFile = File(...),
     format: str = Form("markdown"),
